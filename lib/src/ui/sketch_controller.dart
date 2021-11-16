@@ -143,4 +143,11 @@ class SketchController extends material.ChangeNotifier {
     _redoStack.clear();
     operation.redo(this);
   }
+
+  void clear() {
+    layers.clear();
+    _undoStack.clear();
+    _redoStack.clear();
+    notifyListeners();
+  }
 }

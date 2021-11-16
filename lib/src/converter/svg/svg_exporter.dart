@@ -14,6 +14,7 @@ class SvgExporter implements Exporter {
     SketchController controller, {
     bool exportBackgroundColor = false,
     int precision = 2,
+    Size? bound
   }) {
     final builder = XmlBuilder();
     builder.processing('xml', 'version="1.0"');
@@ -26,10 +27,12 @@ class SvgExporter implements Exporter {
             _flutterColorToSvgColor(controller.backgroundColor.value),
           );
         }
-        _exportViewBox(builder, controller);
-        for (final layer in controller.layers) {
-          for (final stroke in layer.painter.curves) {
-            _toPath(builder, stroke, precision);
+        Offset? offset = _exportViewBox(builder, controller, bound);
+        if(offset != null) {
+          for (final layer in controller.layers) {
+            for (final stroke in layer.painter.curves) {
+              _toPath(builder, stroke, precision, offset);
+            }
           }
         }
       },
@@ -37,24 +40,26 @@ class SvgExporter implements Exporter {
     return builder.buildDocument().outerXml;
   }
 
-  bool _exportViewBox(XmlBuilder builder, SketchController controller) {
+  Offset? _exportViewBox(XmlBuilder builder, SketchController controller, Size? bound) {
     try {
       final overallRect = controller.layers.map((layer) {
         return layer.painter.curves.map((curve) {
           return curve.points
-              .map((offset) => Rect.fromPoints(Offset.zero, offset))
+              .map((offset) => Rect.fromPoints(offset, offset))
               .reduce(_expandToInclude);
         }).reduce(_expandToInclude);
       }).reduce(_expandToInclude);
-      final width = overallRect.width.ceil();
-      final height = overallRect.height.ceil();
-      builder.attribute("width", width);
-      builder.attribute("height", height);
-      builder.attribute("viewBox", "0 0 $width $height");
-      return true;
+      final width = overallRect.width.ceil() + 40;
+      final height = overallRect.height.ceil() + 40;
+      builder.attribute("width", bound?.width ?? width);
+      builder.attribute("height", bound?.height ?? height);
+      builder.attribute("viewBox", "0 0 ${bound?.width ?? width} ${bound?.height ?? height}");
+      builder.attribute("fill", "none");
+      builder.attribute("xmlns", "http://www.w3.org/2000/svg");
+      return bound == null ? Offset(- (overallRect.left - 20), -(overallRect.top - 20)) : Offset.zero;
     } on Object {
       // doesn't have enough points to calculate a view box
-      return false;
+      return null;
     }
   }
 
@@ -62,7 +67,7 @@ class SvgExporter implements Exporter {
     return rect1.expandToInclude(rect2);
   }
 
-  void _toPath(XmlBuilder builder, Curve curve, int precision) {
+  void _toPath(XmlBuilder builder, Curve curve, int precision, Offset offset) {
     if (curve is PathCurve) {
       builder.element(
         "path",
@@ -74,11 +79,11 @@ class SvgExporter implements Exporter {
     } else if (curve is Stroke) {
       final d = StringBuffer();
       d.write(
-        "M${curve.points.first.dx.toStringAsFixed(precision)} ${curve.points.first.dy.toStringAsFixed(precision)}",
+        "M${(curve.points.first.dx + offset.dx).toStringAsFixed(precision)} ${(curve.points.first.dy + offset.dy).toStringAsFixed(precision)}",
       );
       for (final point in curve.points.skip(1)) {
         d.write(
-          " L${point.dx.toStringAsFixed(precision)} ${point.dy.toStringAsFixed(precision)}",
+          " L${(point.dx + offset.dx).toStringAsFixed(precision)} ${(point.dy + offset.dy).toStringAsFixed(precision)}",
         );
       }
       builder.element(
